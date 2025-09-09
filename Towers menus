@@ -1,0 +1,444 @@
+-- Function that uses roblox's built in raycast features to shoot a ray from the player camera to the player's mouse. 
+local function MouseRayCast(blacklist,mode)
+	local mousePosition = UIS:GetMouseLocation()
+	local mouseRay = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
+	local raycastParams = RaycastParams.new()
+	
+	-- If the player is placing a tower then the ray blacklist is updated to exlude all the things in the given 'blacklist' argument.
+	if mode == "Placing" then
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	end
+	raycastParams.FilterDescendantsInstances = blacklist
+	
+	local raycastResult = workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 1000, raycastParams)
+	return raycastResult
+end
+
+-- Adds a range visual for the player to see the placeholder tower's range while placing a tower. This is only shown on the client side.
+local function AddRange(parentTower)
+	local rangeSize = parentTower:GetAttribute("Range") -- Checks if the tower has a range object because some towers like the kumara tower does not have a range.
+	if rangeSize then
+		local rangePartClone = rangePart:Clone()
+		rangePartClone.CFrame = parentTower.PrimaryPart.CFrame
+		rangePartClone.Parent = parentTower
+		rangePartClone.Size = Vector3.new(rangeSize*2, rangeSize*2, rangeSize*2)
+	end
+end
+
+-- Removes the visual placeholder for the player. Affects only the client
+local function RemovePlaceholderTower()
+	if towerToSpawn then
+		towerToSpawn:Destroy()
+		towerToSpawn = nil
+		
+		cancelButton.Visible = false
+	end
+end
+
+-- Adds a visual placeholder for the player to see where they will place a tower. This is only shown on the client side.
+local function AddPlaceholderTower(name)
+	local towerExists = towers:FindFirstChild(name)
+	
+	if towerExists then
+		RemovePlaceholderTower()
+		
+		towerToSpawn = towerExists:Clone()
+		towerToSpawn.Parent = towersFolder
+		AddRange(towerToSpawn)
+		
+		for i,object in ipairs(towerToSpawn:GetDescendants()) do
+			if object:IsA("BasePart") then
+				object.CollisionGroup = "Tower"
+				object.Transparency += 0.6
+			end
+		end
+		cancelButton.Visible = true
+	end
+	return
+end
+
+-- Colors the placeholder tower green or red depending on if the player is allowed to place where their mouse is. The color is not determined in this function but is given as one of the arguments. Client sided.
+local function ColorPlaceholder(color)
+	for i,object in ipairs(towerToSpawn:GetDescendants()) do
+		if object:IsA("BasePart") then
+			object.Color = color
+		end
+	end
+end
+
+-- Updates the tower menu that shows the tower's stats (Range, cooldown, DPH, Target method, others) and allows the player to upgrade or sell it.
+local function UpdateTowerInfo()
+	-- Fetches all the necessary information from the selected tower to update the tower menu.
+	local towerName = selectedTower.Name
+	local towerRange = selectedTower:GetAttribute("Range")
+	local towerDPH = selectedTower:GetAttribute("DPH")
+	local towerCooldown = selectedTower:GetAttribute("Cooldown")
+	local towerUT = selectedTower:GetAttribute("UpgradeTier")
+	local towerBoost = selectedTower:GetAttribute("Boost")
+	
+	-- Sets the background color of the menu UI depending on the tower rarity. This is a small feature that isnt too noticeable.
+	MenuUI.BackgroundColor3 = towerData.TowerRarities[towerData[selectedTower.Name]["Rarity"]]["Color"]:lerp(Color3.new(1, 1, 1), 0.8)
+	MenuUI.UIStroke.Color = MenuUI.BackgroundColor3:Lerp(Color3.new(0, 0, 0), 0.167)
+
+	-- Updates the preview window
+	for i,v in pairs(towerPreview:GetChildren()) do
+		v:Destroy()
+	end
+
+	local towerToPreview = selectedTower:Clone()
+	
+	-- Enables/disables
+	MenuUI.nameLabel.Text = towerData[towerName].DisplayName
+	statsFrame.cooldownlabel.Text = "Cooldown: "..towerCooldown
+	if towerData[selectedTower.Name]["Special"]["Type"] == "Farm" then
+		statsFrame.cooldownlabel.Visible = false
+		statsFrame.dpslabel.Visible = false
+		statsFrame.rangelabel.Visible = false
+		statsFrame.TargetMethodLabel.Visible = false
+		
+		statsFrame.boostmultlabel.Visible = true
+		statsFrame.boostmultlabel.Text = "Multiplier: +"..(towerBoost*100).."%"
+		
+		towerToPreview:PivotTo(CFrame.new(Vector3.new(0,9,5), Vector3.new(0,5,0)))
+	else
+		statsFrame.cooldownlabel.Visible = true
+		statsFrame.dpslabel.Visible = true
+		statsFrame.rangelabel.Visible = true
+		statsFrame.TargetMethodLabel.Visible = true
+
+		statsFrame.boostmultlabel.Visible = false
+		
+		statsFrame.dpslabel.Text = "DPH: "..towerDPH
+		statsFrame.rangelabel.Text = "Range: "..towerRange
+		
+		selectedTower.Range.Transparency = 0.7
+		
+		towerToPreview:PivotTo(CFrame.new(Vector3.new(0,9.67,0.67)))
+	end
+	
+	towerToPreview.Parent = towerPreview
+
+	if towerUT < 4 then
+		upgradeButton.Text = "Upgrade $"..((towerUT + 1) * towerData[selectedTower.Name]["UpgradePrice"])
+		upgradeButton.BackgroundColor3 = Color3.fromRGB(0,200,255)
+		upgradeButton.UIStroke.Color = Color3.fromHSV(0.533333, 1, 0.72549)
+	else
+		upgradeButton.Text = "Max Upgrade"
+		upgradeButton.BackgroundColor3 = Color3.new(0.72549, 0.72549, 0.72549)
+		upgradeButton.UIStroke.Color = Color3.new(0.498039, 0.498039, 0.498039)
+	end
+	
+	local sellPrice = (towerData[selectedTower.Name]["Price"] + (towerData[selectedTower.Name]["UpgradePrice"] * towerUT)) / 2
+	sellButton.Text = "Sell: $"..sellPrice
+end
+
+-- Updates the button in the player's hotbar that corresponds to the given tower. Mostly just sed to update the number that shows how much uses the button in the hotbar has left.
+local function UpdateTowerSpawnButton(towerName : string, name, uses : number)
+	local newButton = nil
+	if hotbarScroll:FindFirstChild(towerName) then	-- If the button already exists, it will edit the button's uses
+		newButton = hotbarScroll[towerName]
+	else	-- If the button does not exist, it will create a new button
+		newButton = spawnButtonTemplate:Clone()
+		newButton.Name = towerName
+		newButton.Visible = true
+		newButton.Parent = hotbarScroll
+		newButton.Text = name
+	end
+	
+	-- Changes the text of the label that shows the button's uses.
+	newButton.Uses.Value += uses
+	newButton.UsesLabel.Text = "x"..newButton.Uses.Value
+end
+
+-- Adds a header above the kumara tower to tell the player how much the tower buff's the player's income in percentage.
+local function AddHeader(newTower)
+	if newTower.Name ~= "KumaraFarmer" then
+		return
+	end
+	local header = newTower:FindFirstChildOfClass("BillboardGui")
+	if not header then
+		header = farmerHeaderTemplate:Clone()
+		header.Name = newTower.Name
+		print("did not find a header")
+	else
+		print("found header")
+	end
+	header.Parent = newTower
+	header.Adornee = newTower
+	header.TextLabel.Text = "+"..(newTower:GetAttribute("Boost")*100).."%"
+end
+
+-- Greys out the spawn button of a tower if the player does not have enough money to buy the tower.
+local function LockSpawnButton(btn)
+	local towerName = btn.Name
+	local towerPrice = towerData[towerName]["Price"]
+	
+	if player.leaderstats.Money.Value >= towerPrice then
+		btn.BackgroundColor3 = Color3.fromRGB(188, 241, 213)
+		btn.UIStroke.Color = Color3.fromRGB(130, 198, 143)
+		btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+	else
+		btn.BackgroundColor3 = Color3.fromRGB(167, 167, 167)
+		btn.UIStroke.Color = Color3.fromRGB(145, 145, 145)
+		btn.TextColor3 = Color3.fromRGB(99, 99, 99)
+	end
+	
+	task.wait(0.2)
+	LockSpawnButton(btn)
+end
+
+--Tower interaction and tower upgrades--------------------------------------------------------------------------------------------------------------------------------------------------
+
+-- mouse.Move fires whenever the player's mouse moves, it will outline the tower the player is hovering over.
+mouse.Move:Connect(function()
+	if not mouse.Target then selectHighlight.Adornee = selectedTower return end
+
+	-- If the mouse is hovering over a part of a tower, this line gets the parent tower of that bodypart/accessory.
+	local model = mouse.Target:FindFirstAncestorOfClass("Model")
+
+	if mouse.Target:HasTag("Tower") then -- if the player is hovering over a tower.
+		selectHighlight.Adornee = mouse.Target
+		return
+	elseif model and model:HasTag("Tower") then -- if the player is hovering over a model that is a tower.
+		selectHighlight.Adornee = model
+		return
+	end
+	selectHighlight.Adornee = selectedTower
+end)
+
+local function ShinyHighlight(newTower)
+	upgradeHighlight.Adornee = newTower
+	upgradeHighlight.FillTransparency = 0
+	for transaprency = 0, 1, 0.1 do
+		task.wait(0.05)
+		upgradeHighlight.FillTransparency = transaprency
+	end
+	upgradeHighlight.Adornee = nil
+end
+
+-- Fires whenever the upgrade button in the tower menu is clicked. It will upgrade the currently selected tower.
+upgradeButton.Activated:Connect(function()
+	if not selectedTower then return end
+
+	local upgradeLevel = selectedTower:GetAttribute("UpgradeTier")
+	if (upgradeLevel < 4)  and player.leaderstats.Money.Value >= ((upgradeLevel + 1) * towerData[selectedTower.Name]["UpgradePrice"]) then
+		
+		local upgrade = {}
+		if towerData[selectedTower.Name]["Special"]["Type"] == "Farm" then
+			upgrade = {
+				Boost = selectedTower:GetAttribute("Boost") + 0.05,
+				UpgradeTier = upgradeLevel + 1
+			}
+		else 
+			upgrade = {
+				Cooldown = selectedTower:GetAttribute("Cooldown") * (0.85 + ((upgradeLevel/100)*4)),
+				DPH =           selectedTower:GetAttribute("DPH") *  1.1,
+				Range =       selectedTower:GetAttribute("Range") * (1.06767 - (upgradeLevel/100)*2),
+				UpgradeTier = upgradeLevel + 1
+			}
+		end
+
+		local newTower = placeTowerFunction:InvokeServer(selectedTower.Name, selectedTower.PrimaryPart.CFrame, upgrade, selectedTower)
+		--selectedTower:Destroy()
+		selectedTower = newTower
+		UpdateTowerInfo()
+		AddHeader(newTower)
+	else
+		print("Max upgrades reached for "..selectedTower.Name.." Tower.")
+	end
+end)
+
+-- Fires whenever the sell button in the tower menu is clicked. It will sell the currently selected tower.
+sellButton.Activated:Connect(function()
+	if not selectedTower then return end
+	
+	local sold = sellTowerFunction:InvokeServer(selectedTower)
+	if sold then
+		UpdateTowerSpawnButton(selectedTower.Name,towerData[selectedTower.Name]["DisplayName"].." Tower",1)
+		selectedTower = nil
+		MenuUI.Visible = false
+	end
+end)
+
+-- Fires whenever the tower method option in the tower menu is clicked. It will cycle through the target methods for the currently selected tower.
+TMButton.Activated:Connect(function()
+	if not selectedTower then return end -- making sure that there is a tower selected before going through with the rest of the code
+
+	local newMethod = changeTargetMethodFunction:InvokeServer(selectedTower) -- calling the server to change the target method of the tower
+	TMButton.Text = newMethod
+end)
+
+--Tower Spawning + Hotbar UI--------------------------------------------------------------------------------------------------------------------------------------------------
+
+-- UIS.InputBegan listens for any inputs from the player's mouse or keyboard. This code is for the player to be able to place or select a tower.
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then -- checks if the detected input is the left mouse button (MouseButton1)
+		if towerToSpawn then -- Codes for the player placing the tower when the mouse is clicked if there is currently a placeholder tower that can be spawned (basically if the player is in tower placing mode).
+			if canPlace then
+				local button = hotbarScroll:FindFirstChild(towerToSpawn.Name)
+				if button then
+					local uses = button.Uses
+					-- Checks if the button clicked still has uses left.
+					if uses.Value >= 1 then
+						local placed = placeTowerFunction:InvokeServer(towerToSpawn.Name, towerToSpawn.PrimaryPart.CFrame) -- Tells the server to place the tower. This call is received in the Tower module running on the server.
+						AddHeader(placed)
+						
+						uses.Value -= 1
+						button.UsesLabel.Text = "x"..button.Uses.Value
+
+						-- Deletes the button if this was the last use.
+						if uses.Value == 0 then
+							button:Destroy()
+						end
+					else
+						button:Destroy()
+					end
+				end
+				RemovePlaceholderTower()
+			end
+		else -- If the player clicks while not in tower placing mode, checks if the player clicks on a tower to view the tower stats/upgrade menu
+			if not mouse.Target then return end
+			
+			local range = nil
+			if selectedTower then
+				range = selectedTower:FindFirstChild("Range")
+				if range then selectedTower.Range.Transparency = 1 end
+			end
+			
+			local model = mouse.Target:FindFirstAncestorOfClass("Model")
+			if model and model:HasTag("Tower") then
+				selectedTower = model
+				
+				UpdateTowerInfo()
+				MenuUI.Visible = true
+				
+				range = selectedTower:FindFirstChild("Range")
+				if range  then
+					selectedTower.Range.Transparency = 0.7
+				end
+			else
+				selectedTower = nil
+				MenuUI.Visible = false
+			end
+		end
+	end
+	
+	-- Cancel tower placement if the 'Q' key is pressed.
+	if input.KeyCode == Enum.KeyCode.Q then
+		if towerToSpawn then
+			RemovePlaceholderTower()
+		end
+	end
+end)
+
+-- RService.RenderStepped is called every frame. This code is for moving the tower placeholder to where the player mouse is when the player is in tower placing mode.
+RService.RenderStepped:Connect(function()
+	if towerToSpawn then
+		local result = MouseRayCast({towerToSpawn, game.Players.LocalPlayer.Character},"Placing")  -- Casts a ray from the player's camera to the mouse position.
+		if result and result.Instance then
+			-- Colors the placeholder tower green if the player can place the tower there and red if they can't.
+			if result.Instance:FindFirstAncestor("TowerPlaceable") then
+				canPlace = true
+				ColorPlaceholder(Color3.new(0, 1, 0))
+			else
+				canPlace = false
+				ColorPlaceholder(Color3.new(1, 0, 0))
+			end
+
+			-- Moves the placeholder tower to where the mouse is in the world.
+			local x = result.Position.X
+			local y = nil
+			if towerToSpawn:FindFirstChild("Humanoid") then
+				if towerToSpawn.Humanoid.RigType == Enum.HumanoidRigType.R15 then
+					y = result.Position.Y + towerToSpawn.Humanoid.HipHeight + (towerToSpawn.PrimaryPart.Size.Y / 2)
+				else
+					y = result.Position.Y + (towerToSpawn.PrimaryPart.Size.Y / 2) + 2
+				end
+			else
+				y = result.Position.Y + (towerToSpawn.PrimaryPart.Size.Y / 2)
+			end
+			local z = result.Position.Z
+			local cframe = CFrame.new(x,y,z)
+			towerToSpawn:SetPrimaryPartCFrame(cframe)
+		end
+	end
+end)
+
+-- This function fires whenever a new button is added to the hotbar. It activates the button and links the button to the tower.
+hotbarScroll.ChildAdded:Connect(function(btn)
+	if btn:IsA("GuiButton") then
+		local towerPrice = towerData[btn.Name]["Price"]
+		btn.Activated:Connect(function()
+			local hasMoney = player.leaderstats.Money.Value >= towerPrice -- Checks the if the player has enough money to buy the chosen tower.
+			if hasMoney then
+				if selectedTower then
+					local range = selectedTower:FindFirstChild("Range")
+					if range then selectedTower.Range.Transparency = 1 end
+				end
+				
+				AddPlaceholderTower(btn.Name)
+				MenuUI.Visible = false
+			else
+				print("LOL L SHAME "..player.Name.." does not have enough money to buy a "..btn.Name.." Tower 😂😂")
+			end
+		end)
+		
+		-- Creates a tooltip that follows the mouse when hovering over the tower button showing the price of that tower.
+		btn.MouseMoved:Connect(function(xpos,ypos)
+			priceTooltip.Visible = true
+			priceTooltip.Text = "$"..towerPrice
+			priceTooltip.Position = UDim2.fromOffset(xpos,ypos)
+		end)
+		btn.MouseLeave:Connect(function()
+			priceTooltip.Visible = false
+		end)
+		coroutine.wrap(LockSpawnButton)(btn)
+	end
+end)
+
+-- This function fires when the game starts (when the start button is pressed). It initializes the player's hotbar using the player's inventory before starting the game.
+startGameButton.Activated:Connect(function()
+	-- Creates the player's starting inventory when they enter the game.
+	inventory = {
+		Tawhirimatea = {
+			Display = "Tāwhirimātea",
+			Uses = 5
+		},
+		Ruaumoko = {
+			Display = "Ruaumoko",
+			Uses = 5
+		},
+		Tangaroa = {
+			Display = "Tangaroa",
+			Uses = 3
+		},
+		KumaraFarmer = {
+			Display = "Kumara Farm",
+			Uses = 4
+		},
+		TaneMahuta = {
+			Display = "Tāne-Mahuta",
+			Uses = 2
+		},
+	}
+
+	-- Transfer player's towers from backpack into inventory
+	for _,v in ipairs(player.Backpack:GetChildren()) do
+		if inventory[v.Name] then
+			inventory[v.Name]["Uses"] += 1
+		else
+			inventory[v.Name] = {
+				DisplayName = "",
+				Uses = 0
+			}
+		end
+		v:Destroy()
+	end
+
+	-- Initialize player's tower hotbar
+	for tower,info in pairs(inventory) do
+		UpdateTowerSpawnButton(tower, inventory[tower].Display, info.Uses)
+	end
+end)
