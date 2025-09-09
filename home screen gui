@@ -1,0 +1,89 @@
+local HomeScreenGui = script.Parent
+local ShopGui = HomeScreenGui.Parent:WaitForChild("ShopGui")
+local TutorialGui = HomeScreenGui.Parent:WaitForChild("TutorialGui")
+local maingameGUI = HomeScreenGui.Parent:WaitForChild("GameGUI")
+local towerMenuGUI = HomeScreenGui.Parent:WaitForChild("TowerMenus")
+
+
+local shopButton = HomeScreenGui.Frame:WaitForChild("ShopButton")
+--	
+local startButton = HomeScreenGui.Frame:WaitForChild("StartGame")
+--
+local tutorialbutton = HomeScreenGui.Frame:WaitForChild("GameTutorial")
+-- 
+
+
+local shopback = ShopGui:WaitForChild("ShopBack")
+local Enemies = TutorialGui.tutorialframe:WaitForChild("Enemies")
+local Towers = TutorialGui.tutorialframe:WaitForChild("Towers")
+local tutorialReturnButton = TutorialGui.tutorialframe:WaitForChild("ReturnButton")
+local EnemyTutorialGUI = HomeScreenGui.Parent:WaitForChild("EnemyTutorialGUI")
+local TowertutorialGUI = HomeScreenGui.Parent:WaitForChild("TowertutorialGUI")
+local enemytutorialReturnButton = EnemyTutorialGUI:WaitForChild("ReturnButton")
+local towertutorialReturnButton = TowertutorialGUI:WaitForChild("ReturnButton")
+
+local startgame = game.ReplicatedStorage.InRound
+
+
+-- codes for when the shop button is clicked with ur mouse button, the shop gui will get enabled and the homescreen gui will be disabled--
+shopButton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = false 
+	ShopGui.Enabled = true
+end)
+-- this button cudes for when the back button is clicked,the player will return the homescreen meaning homescreen gui will get enabled and the shop gui will be disabled--
+shopback.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = true
+	ShopGui.Enabled = false
+end)
+
+-- this button codes for when the tutorial button is clicked, the tutorial gui will get enabled and the homescreen gui will be disabled--
+tutorialbutton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = false
+	TutorialGui.Enabled = true
+end)
+-- this button codes for when the turorial return button is clicked, the tutorial gui will get disabled and the homescreen gui will be enabled--
+tutorialReturnButton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = true
+	TutorialGui.Enabled = false
+end)
+enemytutorialReturnButton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = true
+	EnemyTutorialGUI.Enabled = false
+end)
+towertutorialReturnButton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = true
+	TowertutorialGUI.Enabled = false
+end)
+
+-- when button is clicked, the homescreen gui will be disabled and the maingame gui will be enabled--
+startButton.MouseButton1Click:Connect(function()
+	HomeScreenGui.Enabled = false
+	HomeScreenGui.Cam.Disabled = true
+	game.Lighting.Blur.Enabled = false
+	game.Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart").Anchored = false
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+	
+	maingameGUI.Enabled = true
+	towerMenuGUI.Enabled = true
+	game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("StartGame"):FireServer()
+end)
+
+-- while in the tutorial gui the player can click on a button which takes them to a page with information about the enemies in the game: thus enabling the enemyinformation gui and disabling the tutorial gui
+Enemies.MouseButton1Click:Connect(function()
+	TutorialGui.Enabled = false
+	EnemyTutorialGUI.Enabled = true
+end)
+
+-- this button can be clicked when player is in the to
+Towers.MouseButton1Click:Connect(function()
+	TutorialGui.Enabled = false
+	TowertutorialGUI.Enabled = true
+end)
+
+
+for _,v in pairs(HomeScreenGui.Parent:GetChildren()) do
+	if tostring(v) ~= "HomeScreenGui" then
+		v.Enabled = false
+	end
+end
+HomeScreenGui.Enabled = true
